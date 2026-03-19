@@ -1,10 +1,12 @@
 import os
 import tempfile
+import json
 from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from openai import OpenAI
 from pydantic import BaseModel
 
 load_dotenv(Path(__file__).parent.parent / ".env")
@@ -37,6 +39,21 @@ class TranscribeResponse(BaseModel):
     language: str | None = None
     segments: list[dict] = []
     backend: str = ""
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+
+class ChatRequest(BaseModel):
+    system_prompt: str
+    messages: list[ChatMessage]
+
+
+class ChatResponse(BaseModel):
+    status: str
+    assistant_message: str
+    record: dict | None = None
 
 
 @app.get("/health")
@@ -84,3 +101,32 @@ async def transcribe(
             )
     finally:
         os.unlink(tmp_path)
+
+
+@app.post("/chat", response_model=ChatResponse)
+async def chat(req: ChatRequest):
+    if not os.getenv("OPENAI_API_KEY"):
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY is not configured on backend")
+
+    try:
+        response = openai_client.chat.completions.create(
+            model=OPENAI_MODEL,
+            temperature=0.2,
+            messages=[
+                {"role": "system", "content": req.system_prompt},
+                *[{"role": m.role, "content": m.content} for m in req.messages],
+            ],
+            response_format={"type": "json_object"},
+        )
+        content = (response.choices[0].message.content or "").strip()
+        parsed = json.loads(content)
+        status = parsed.get("status")
+        assistant_message = parsed.get("assistant_message")
+        record = parsed.get("record")
+        if status not in {"in_progress", "complete"} or not isinstance(assistant_message, str):
+            raise HTTPException(status_code=502, detail="Invalid JSON returned from LLM")
+        return ChatResponse(status=status, assistant_message=assistant_message, record=record)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Chat generation failed: {exc}") from exc

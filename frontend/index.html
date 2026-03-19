@@ -366,10 +366,18 @@
 // ══════════════════════════════════════════
 //  定数・設定
 // ══════════════════════════════════════════
-const SILENCE_THRESHOLD   = 0.012;  // 無音と判定するRMS値（0〜1）
-const SILENCE_DURATION_MS = 1500;   // 無音継続でセグメント確定（ms）
-const MIN_RECORD_MS       = 400;    // 最短録音時間（ノイズ除去）
-const STORAGE_KEY         = 'zoo_records_v1';
+// --- キャリブレーション ---
+const CALIBRATION_MS        = 1500;   // 起動時に環境音を計測する時間（ms）
+const CALIBRATION_MULTIPLIER= 4.0;   // ノイズフロアの何倍を発話閾値にするか
+const MIN_THRESHOLD         = 0.018; // 閾値の下限（静かすぎる環境でも誤検知しない）
+const MAX_THRESHOLD         = 0.10;  // 閾値の上限（極端にうるさい環境でも使えるように）
+
+// --- 録音トリガー ---
+const SPEECH_ONSET_MS       = 180;   // 録音開始前に音声が続く最短時間（ノイズスパイク除去）
+const SILENCE_DURATION_MS   = 2000;  // 無音継続でセグメント確定（ms）
+const MIN_RECORD_MS         = 600;   // 最短録音時間（短すぎる場合は無視）
+
+const STORAGE_KEY           = 'zoo_records_v1';
 
 // ══════════════════════════════════════════
 //  状態
@@ -382,9 +390,11 @@ let audioChunks    = [];
 let audioCtx       = null;
 let analyser       = null;
 let micStream      = null;
-let silenceTimer   = null;
-let recordStartTime= 0;
-let volumeRAF      = null;
+let silenceThreshold = MIN_THRESHOLD; // キャリブレーション後に上書き
+let speechOnsetTimer = null;          // 発話開始デバウンス用タイマー
+let silenceTimer     = null;
+let recordStartTime  = 0;
+let volumeRAF        = null;
 let conversation   = [];       // [{role, content}]
 let isSpeaking     = false;
 let isStopped      = false;
@@ -439,16 +449,51 @@ async function initMic() {
     micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
     audioCtx  = new (window.AudioContext || window.webkitAudioContext)();
     analyser  = audioCtx.createAnalyser();
-    analyser.fftSize = 256;
+    analyser.fftSize = 512;
     const src = audioCtx.createMediaStreamSource(micStream);
     src.connect(analyser);
+    resetConversation();
+    await calibrateNoiseFloor();
     setState('waiting');
     startVolumeMonitor();
-    resetConversation();
   } catch (e) {
     showToast('マイクへのアクセスが必要です');
     console.error(e);
   }
+}
+
+// ══════════════════════════════════════════
+//  ノイズフロアキャリブレーション
+// ══════════════════════════════════════════
+function calibrateNoiseFloor() {
+  document.getElementById('status-text').textContent = '🎙 環境音を計測中...';
+  const buf = new Uint8Array(analyser.fftSize);
+  const samples = [];
+
+  return new Promise(resolve => {
+    const start = Date.now();
+    function sample() {
+      if (Date.now() - start < CALIBRATION_MS) {
+        analyser.getByteTimeDomainData(buf);
+        let sum = 0;
+        for (let i = 0; i < buf.length; i++) {
+          const v = (buf[i] - 128) / 128;
+          sum += v * v;
+        }
+        samples.push(Math.sqrt(sum / buf.length));
+        setTimeout(sample, 40);
+      } else {
+        // 上位10%のサンプルを外れ値として除外し、平均を取る
+        samples.sort((a, b) => a - b);
+        const trimmed = samples.slice(0, Math.floor(samples.length * 0.9));
+        const avg = trimmed.reduce((a, b) => a + b, 0) / trimmed.length;
+        silenceThreshold = Math.min(Math.max(avg * CALIBRATION_MULTIPLIER, MIN_THRESHOLD), MAX_THRESHOLD);
+        console.log(`[VAD] ノイズフロア avg=${avg.toFixed(4)} → 閾値=${silenceThreshold.toFixed(4)}`);
+        resolve();
+      }
+    }
+    sample();
+  });
 }
 
 // ══════════════════════════════════════════
@@ -474,17 +519,26 @@ function startVolumeMonitor() {
     if (isStopped) return;
 
     if (appState === 'waiting') {
-      if (rms > SILENCE_THRESHOLD) startRecording();
+      if (rms > silenceThreshold) {
+        // 閾値超えが SPEECH_ONSET_MS 継続したら録音開始（スパイク除去）
+        if (!speechOnsetTimer) {
+          speechOnsetTimer = setTimeout(() => {
+            speechOnsetTimer = null;
+            startRecording();
+          }, SPEECH_ONSET_MS);
+        }
+      } else {
+        clearTimeout(speechOnsetTimer);
+        speechOnsetTimer = null;
+      }
     } else if (appState === 'recording') {
-      if (rms > SILENCE_THRESHOLD) {
+      if (rms > silenceThreshold) {
         clearTimeout(silenceTimer);
         silenceTimer = null;
       } else if (!silenceTimer) {
         silenceTimer = setTimeout(() => {
           if (Date.now() - recordStartTime >= MIN_RECORD_MS) stopRecording();
-          else {
-            silenceTimer = null;
-          }
+          else silenceTimer = null;
         }, SILENCE_DURATION_MS);
       }
     }
@@ -511,7 +565,9 @@ function startRecording() {
 function stopRecording() {
   if (appState !== 'recording') return;
   clearTimeout(silenceTimer);
+  clearTimeout(speechOnsetTimer);
   silenceTimer = null;
+  speechOnsetTimer = null;
   mediaRecorder.stop();
 }
 

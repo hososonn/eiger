@@ -61,35 +61,6 @@
     ═══════════════════════════ */
     #chat-screen { background: #f0f2f5; }
 
-    /* APIキー入力 */
-    #api-key-section {
-      background: #fff8e1;
-      border-bottom: 1px solid #ffe082;
-      padding: 12px 16px;
-      flex-shrink: 0;
-    }
-    #api-key-section label { font-size: 12px; color: #795548; font-weight: 600; display: block; margin-bottom: 6px; }
-    #api-key-row { display: flex; gap: 8px; }
-    #api-key-input {
-      flex: 1;
-      border: 1px solid #ffe082;
-      border-radius: 8px;
-      padding: 8px 10px;
-      font-size: 13px;
-      outline: none;
-      background: #fff;
-    }
-    #api-key-input:focus { border-color: #ffa000; }
-    #api-key-save {
-      background: #ffa000;
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      padding: 8px 14px;
-      font-size: 13px;
-      cursor: pointer;
-      font-weight: 600;
-    }
 
     /* ステータスバー */
     #status-bar {
@@ -339,16 +310,7 @@
   <!-- ─── チャット画面 ─── -->
   <div id="chat-screen" class="screen active">
 
-    <!-- APIキー -->
-    <div id="api-key-section">
-      <label>🔑 OpenAI API キー</label>
-      <div id="api-key-row">
-        <input id="api-key-input" type="password" placeholder="sk-..." />
-        <button id="api-key-save" onclick="saveApiKey()">保存</button>
-      </div>
-    </div>
-
-    <!-- ステータスバー -->
+      <!-- ステータスバー -->
     <div id="status-bar">
       <div id="status-indicator" class="waiting">🎤</div>
       <span id="status-text">待機中</span>
@@ -380,6 +342,7 @@
 <!-- トースト -->
 <div id="toast"></div>
 
+<!-- __API_KEY_INJECT__ -->
 <script>
 'use strict';
 
@@ -394,7 +357,7 @@ const STORAGE_KEY         = 'zoo_records_v1';
 // ══════════════════════════════════════════
 //  状態
 // ══════════════════════════════════════════
-let apiKey         = '';
+let apiKey         = window.__OPENAI_API_KEY__ || '';
 let currentScreen  = 'chat';
 let appState       = 'idle';  // idle | waiting | recording | thinking
 let mediaRecorder  = null;
@@ -412,31 +375,14 @@ let isSpeaking     = false;
 //  初期化
 // ══════════════════════════════════════════
 window.addEventListener('DOMContentLoaded', () => {
-  loadApiKey();
+  if (!apiKey) {
+    document.getElementById('status-text').textContent = 'APIキーが設定されていません (.env を確認)';
+    return;
+  }
   renderRecords();
-  if (apiKey) initMic();
+  initMic();
 });
 
-// ══════════════════════════════════════════
-//  APIキー管理
-// ══════════════════════════════════════════
-function loadApiKey() {
-  apiKey = localStorage.getItem('openai_api_key') || '';
-  if (apiKey) {
-    document.getElementById('api-key-section').style.display = 'none';
-    document.getElementById('api-key-input').value = apiKey;
-  }
-}
-
-function saveApiKey() {
-  const val = document.getElementById('api-key-input').value.trim();
-  if (!val.startsWith('sk-')) { showToast('APIキーは sk- で始まる形式です'); return; }
-  apiKey = val;
-  localStorage.setItem('openai_api_key', apiKey);
-  document.getElementById('api-key-section').style.display = 'none';
-  showToast('APIキーを保存しました');
-  initMic();
-}
 
 // ══════════════════════════════════════════
 //  画面切り替え
@@ -581,7 +527,7 @@ async function transcribe(blob, mimeType) {
   const ext = mimeType.includes('ogg') ? 'ogg' : mimeType.includes('mp4') ? 'mp4' : 'webm';
   const form = new FormData();
   form.append('file', blob, `audio.${ext}`);
-  form.append('model', 'whisper-1');
+  form.append('model', 'gpt-4o-transcribe');
   form.append('language', 'ja');
 
   const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {

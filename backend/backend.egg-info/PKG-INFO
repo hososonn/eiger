@@ -1,0 +1,23 @@
+Metadata-Version: 2.4
+Name: backend
+Version: 0.1.0
+Summary: Add your description here
+Requires-Python: >=3.13
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi>=0.135.1
+Requires-Dist: openai>=1.109.1
+Requires-Dist: openai-whisper>=20250625
+Requires-Dist: python-multipart>=0.0.22
+Requires-Dist: uvicorn[standard]>=0.42.0
+
+# backend
+
+FastAPI + openai-whisper による音声文字起こし API。
+
+## 起動
+
+```bash
+uv run uvicorn main:app --reload
+```
+
+詳細はルートの [README](../README.md) を参照。

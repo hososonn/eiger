@@ -12,9 +12,11 @@ import os
 import re
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-PORT = 8080
+PORT = 8082
 HTML_FILE = os.path.join(os.path.dirname(__file__), "index.html")
 ENV_FILE  = os.path.join(os.path.dirname(__file__), ".env")
+if not os.path.exists(ENV_FILE):
+    ENV_FILE = os.path.join(os.path.dirname(__file__), "..", ".env")
 
 
 def load_env() -> dict:
@@ -54,7 +56,7 @@ class Handler(BaseHTTPRequestHandler):
         env = load_env()
         api_key = env.get("OPENAI_API_KEY", "")
         if not api_key:
-            self.send_error(500, "OPENAI_API_KEY が .env に設定されていません")
+            self.send_error(500, "OPENAI_API_KEY is not set in .env")
             return
         body = build_html(api_key)
         self.send_response(200)

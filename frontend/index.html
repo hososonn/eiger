@@ -102,6 +102,22 @@
 
     #status-text { font-size: 14px; color: #555; font-weight: 500; }
 
+    #stop-btn {
+      background: #e53935;
+      border: none;
+      color: #fff;
+      padding: 6px 14px;
+      border-radius: 14px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background 0.2s;
+    }
+    #stop-btn:hover { background: #b71c1c; }
+    #stop-btn.stopped { background: #2d5a27; }
+    #stop-btn.stopped:hover { background: #1b5e20; }
+
     /* 音量メーター */
     #volume-bar-wrap {
       flex: 1;
@@ -315,6 +331,7 @@
       <div id="status-indicator" class="waiting">🎤</div>
       <span id="status-text">待機中</span>
       <div id="volume-bar-wrap"><div id="volume-bar"></div></div>
+      <button id="stop-btn" onclick="toggleStop()">⏹ 停止</button>
     </div>
 
     <!-- 会話ログ -->
@@ -370,6 +387,7 @@ let recordStartTime= 0;
 let volumeRAF      = null;
 let conversation   = [];       // [{role, content}]
 let isSpeaking     = false;
+let isStopped      = false;
 
 // ══════════════════════════════════════════
 //  初期化
@@ -452,6 +470,8 @@ function startVolumeMonitor() {
     document.getElementById('volume-bar').style.width = Math.min(rms * 800, 100) + '%';
 
     if (isSpeaking) return; // 読み上げ中はトリガーしない
+
+    if (isStopped) return;
 
     if (appState === 'waiting') {
       if (rms > SILENCE_THRESHOLD) startRecording();
@@ -786,6 +806,27 @@ function getAnimalIcon(type) {
     'パンダ': '🐼', 'トラ': '🐯', 'クマ': '🐻', 'サル': '🐒', 'シマウマ': '🦓',
     'カバ': '🦛', 'サイ': '🦏', 'オカピ': '🦌', 'フラミンゴ': '🦩', 'タコ': '🐙' };
   return map[type] || '🐾';
+}
+
+// ══════════════════════════════════════════
+//  停止 / 再開
+// ══════════════════════════════════════════
+function toggleStop() {
+  const btn = document.getElementById('stop-btn');
+  if (!isStopped) {
+    isStopped = true;
+    if (appState === 'recording') stopRecording();
+    speechSynthesis.cancel();
+    isSpeaking = false;
+    setState('idle');
+    btn.textContent = '▶ 再開';
+    btn.classList.add('stopped');
+  } else {
+    isStopped = false;
+    setState('waiting');
+    btn.textContent = '⏹ 停止';
+    btn.classList.remove('stopped');
+  }
 }
 
 function showToast(msg) {

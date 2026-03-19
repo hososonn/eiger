@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>動物園飼育記録 音声入力</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f0f2f5;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+    }
+
+    /* ── スマホ風ラッパー ── */
+    #app {
+      width: 100%;
+      max-width: 430px;
+      min-height: 100vh;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* ── ヘッダー ── */
+    header {
+      background: #2d5a27;
+      color: #fff;
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    header h1 { font-size: 17px; font-weight: 600; }
+    header .header-btn {
+      background: rgba(255,255,255,0.2);
+      border: none;
+      color: #fff;
+      padding: 6px 12px;
+      border-radius: 14px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    header .header-btn:hover { background: rgba(255,255,255,0.35); }
+
+    /* ── 画面切り替え ── */
+    .screen { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+    .screen.active { display: flex; }
+
+    /* ═══════════════════════════
+       チャット画面
+    ═══════════════════════════ */
+    #chat-screen { background: #f0f2f5; }
+
+    /* APIキー入力 */
+    #api-key-section {
+      background: #fff8e1;
+      border-bottom: 1px solid #ffe082;
+      padding: 12px 16px;
+      flex-shrink: 0;
+    }
+    #api-key-section label { font-size: 12px; color: #795548; font-weight: 600; display: block; margin-bottom: 6px; }
+    #api-key-row { display: flex; gap: 8px; }
+    #api-key-input {
+      flex: 1;
+      border: 1px solid #ffe082;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 13px;
+      outline: none;
+      background: #fff;
+    }
+    #api-key-input:focus { border-color: #ffa000; }
+    #api-key-save {
+      background: #ffa000;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 8px 14px;
+      font-size: 13px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    /* ステータスバー */
+    #status-bar {
+      background: #fff;
+      border-bottom: 1px solid #e0e0e0;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    #status-indicator {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    #status-indicator.waiting { background: #e8f5e9; animation: pulse-green 2s infinite; }
+    #status-indicator.recording { background: #ffebee; animation: pulse-red 0.8s infinite; }
+    #status-indicator.thinking { background: #e3f2fd; animation: pulse-blue 1.5s infinite; }
+
+    @keyframes pulse-green {
+      0%,100% { box-shadow: 0 0 0 0 rgba(76,175,80,0.4); }
+      50% { box-shadow: 0 0 0 8px rgba(76,175,80,0); }
+    }
+    @keyframes pulse-red {
+      0%,100% { box-shadow: 0 0 0 0 rgba(244,67,54,0.5); }
+      50% { box-shadow: 0 0 0 8px rgba(244,67,54,0); }
+    }
+    @keyframes pulse-blue {
+      0%,100% { box-shadow: 0 0 0 0 rgba(33,150,243,0.4); }
+      50% { box-shadow: 0 0 0 8px rgba(33,150,243,0); }
+    }
+
+    #status-text { font-size: 14px; color: #555; font-weight: 500; }
+
+    /* 音量メーター */
+    #volume-bar-wrap {
+      flex: 1;
+      height: 6px;
+      background: #e0e0e0;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    #volume-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #4caf50, #8bc34a);
+      border-radius: 3px;
+      transition: width 0.05s;
+    }
+
+    /* 会話ログ */
+    #chat-log {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .bubble-row { display: flex; align-items: flex-end; gap: 8px; }
+    .bubble-row.user { flex-direction: row-reverse; }
+    .bubble-row.assistant { flex-direction: row; }
+
+    .avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+    .avatar.ai { background: #2d5a27; }
+    .avatar.user-av { background: #1565c0; }
+
+    .bubble {
+      max-width: 75%;
+      padding: 10px 14px;
+      border-radius: 18px;
+      font-size: 14px;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+    .bubble.ai {
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-bottom-left-radius: 4px;
+      color: #212121;
+    }
+    .bubble.user {
+      background: #1565c0;
+      color: #fff;
+      border-bottom-right-radius: 4px;
+    }
+
+    .bubble-time {
+      font-size: 10px;
+      color: #9e9e9e;
+      margin-top: 4px;
+      text-align: right;
+    }
+
+    /* ── 空状態ヒント ── */
+    #chat-empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 48px 24px;
+      color: #9e9e9e;
+      text-align: center;
+    }
+    #chat-empty .hint-icon { font-size: 48px; margin-bottom: 16px; }
+    #chat-empty p { font-size: 14px; line-height: 1.6; }
+
+    /* ═══════════════════════════
+       DB画面
+    ═══════════════════════════ */
+    #db-screen { background: #f0f2f5; }
+
+    #db-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    #new-record-btn {
+      background: #2d5a27;
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      padding: 14px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      flex-shrink: 0;
+      transition: background 0.2s;
+      box-shadow: 0 2px 8px rgba(45,90,39,0.3);
+    }
+    #new-record-btn:hover { background: #1b5e20; }
+
+    .record-card {
+      background: #fff;
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .card-animal-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: #e8f5e9;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      flex-shrink: 0;
+    }
+    .card-title { flex: 1; }
+    .card-title h3 { font-size: 16px; font-weight: 700; color: #212121; }
+    .card-title .card-subtitle { font-size: 12px; color: #757575; margin-top: 2px; }
+    .card-timestamp {
+      font-size: 11px;
+      color: #9e9e9e;
+      text-align: right;
+    }
+
+    .card-body { display: flex; flex-direction: column; gap: 6px; }
+    .card-row {
+      display: flex;
+      gap: 8px;
+      font-size: 13px;
+    }
+    .card-label {
+      color: #757575;
+      min-width: 64px;
+      flex-shrink: 0;
+    }
+    .card-value { color: #212121; }
+
+    #db-empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 48px 24px;
+      color: #9e9e9e;
+      text-align: center;
+    }
+    #db-empty .hint-icon { font-size: 48px; margin-bottom: 16px; }
+    #db-empty p { font-size: 14px; }
+
+    /* ── トースト ── */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(60px);
+      background: rgba(0,0,0,0.8);
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: 20px;
+      font-size: 13px;
+      transition: transform 0.3s;
+      z-index: 999;
+      white-space: nowrap;
+    }
+    #toast.show { transform: translateX(-50%) translateY(0); }
+
+    /* ── スクロールバー ── */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 2px; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <!-- ヘッダー -->
+  <header>
+    <h1>🦁 飼育記録システム</h1>
+    <button class="header-btn" id="nav-btn" onclick="toggleScreen()">📋 記録一覧</button>
+  </header>
+
+  <!-- ─── チャット画面 ─── -->
+  <div id="chat-screen" class="screen active">
+
+    <!-- APIキー -->
+    <div id="api-key-section">
+      <label>🔑 OpenAI API キー</label>
+      <div id="api-key-row">
+        <input id="api-key-input" type="password" placeholder="sk-..." />
+        <button id="api-key-save" onclick="saveApiKey()">保存</button>
+      </div>
+    </div>
+
+    <!-- ステータスバー -->
+    <div id="status-bar">
+      <div id="status-indicator" class="waiting">🎤</div>
+      <span id="status-text">待機中</span>
+      <div id="volume-bar-wrap"><div id="volume-bar"></div></div>
+    </div>
+
+    <!-- 会話ログ -->
+    <div id="chat-log">
+      <div id="chat-empty">
+        <div class="hint-icon">🎙️</div>
+        <p>マイクに向かって話しかけると<br>記録が始まります</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── DB画面 ─── -->
+  <div id="db-screen" class="screen">
+    <div id="db-content">
+      <button id="new-record-btn" onclick="goToChat()">＋ 新規記録</button>
+      <div id="db-empty" style="display:none">
+        <div class="hint-icon">📭</div>
+        <p>まだ記録がありません</p>
+      </div>
+      <div id="records-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- トースト -->
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+// ══════════════════════════════════════════
+//  定数・設定
+// ══════════════════════════════════════════
+const SILENCE_THRESHOLD   = 0.012;  // 無音と判定するRMS値（0〜1）
+const SILENCE_DURATION_MS = 1500;   // 無音継続でセグメント確定（ms）
+const MIN_RECORD_MS       = 400;    // 最短録音時間（ノイズ除去）
+const STORAGE_KEY         = 'zoo_records_v1';
+
+// ══════════════════════════════════════════
+//  状態
+// ══════════════════════════════════════════
+let apiKey         = '';
+let currentScreen  = 'chat';
+let appState       = 'idle';  // idle | waiting | recording | thinking
+let mediaRecorder  = null;
+let audioChunks    = [];
+let audioCtx       = null;
+let analyser       = null;
+let micStream      = null;
+let silenceTimer   = null;
+let recordStartTime= 0;
+let volumeRAF      = null;
+let conversation   = [];       // [{role, content}]
+let isSpeaking     = false;
+
+// ══════════════════════════════════════════
+//  初期化
+// ══════════════════════════════════════════
+window.addEventListener('DOMContentLoaded', () => {
+  loadApiKey();
+  renderRecords();
+  if (apiKey) initMic();
+});
+
+// ══════════════════════════════════════════
+//  APIキー管理
+// ══════════════════════════════════════════
+function loadApiKey() {
+  apiKey = localStorage.getItem('openai_api_key') || '';
+  if (apiKey) {
+    document.getElementById('api-key-section').style.display = 'none';
+    document.getElementById('api-key-input').value = apiKey;
+  }
+}
+
+function saveApiKey() {
+  const val = document.getElementById('api-key-input').value.trim();
+  if (!val.startsWith('sk-')) { showToast('APIキーは sk- で始まる形式です'); return; }
+  apiKey = val;
+  localStorage.setItem('openai_api_key', apiKey);
+  document.getElementById('api-key-section').style.display = 'none';
+  showToast('APIキーを保存しました');
+  initMic();
+}
+
+// ══════════════════════════════════════════
+//  画面切り替え
+// ══════════════════════════════════════════
+function toggleScreen() {
+  if (currentScreen === 'chat') showDB();
+  else showChat();
+}
+
+function showDB() {
+  currentScreen = 'db';
+  document.getElementById('chat-screen').classList.remove('active');
+  document.getElementById('db-screen').classList.add('active');
+  document.getElementById('nav-btn').textContent = '🎤 記録する';
+  renderRecords();
+}
+
+function showChat() {
+  currentScreen = 'chat';
+  document.getElementById('db-screen').classList.remove('active');
+  document.getElementById('chat-screen').classList.add('active');
+  document.getElementById('nav-btn').textContent = '📋 記録一覧';
+}
+
+function goToChat() {
+  showChat();
+  resetConversation();
+}
+
+// ══════════════════════════════════════════
+//  マイク初期化
+// ══════════════════════════════════════════
+async function initMic() {
+  if (!apiKey) return;
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    audioCtx  = new (window.AudioContext || window.webkitAudioContext)();
+    analyser  = audioCtx.createAnalyser();
+    analyser.fftSize = 256;
+    const src = audioCtx.createMediaStreamSource(micStream);
+    src.connect(analyser);
+    setState('waiting');
+    startVolumeMonitor();
+    resetConversation();
+  } catch (e) {
+    showToast('マイクへのアクセスが必要です');
+    console.error(e);
+  }
+}
+
+// ══════════════════════════════════════════
+//  音量モニタリング
+// ══════════════════════════════════════════
+function startVolumeMonitor() {
+  const buf = new Uint8Array(analyser.fftSize);
+  function tick() {
+    volumeRAF = requestAnimationFrame(tick);
+    analyser.getByteTimeDomainData(buf);
+    let sum = 0;
+    for (let i = 0; i < buf.length; i++) {
+      const v = (buf[i] - 128) / 128;
+      sum += v * v;
+    }
+    const rms = Math.sqrt(sum / buf.length);
+
+    // 音量バー更新
+    document.getElementById('volume-bar').style.width = Math.min(rms * 800, 100) + '%';
+
+    if (isSpeaking) return; // 読み上げ中はトリガーしない
+
+    if (appState === 'waiting') {
+      if (rms > SILENCE_THRESHOLD) startRecording();
+    } else if (appState === 'recording') {
+      if (rms > SILENCE_THRESHOLD) {
+        clearTimeout(silenceTimer);
+        silenceTimer = null;
+      } else if (!silenceTimer) {
+        silenceTimer = setTimeout(() => {
+          if (Date.now() - recordStartTime >= MIN_RECORD_MS) stopRecording();
+          else {
+            silenceTimer = null;
+          }
+        }, SILENCE_DURATION_MS);
+      }
+    }
+  }
+  tick();
+}
+
+// ══════════════════════════════════════════
+//  録音制御
+// ══════════════════════════════════════════
+function startRecording() {
+  if (appState !== 'waiting') return;
+  setState('recording');
+  audioChunks = [];
+  recordStartTime = Date.now();
+
+  const mimeType = getSupportedMime();
+  mediaRecorder = new MediaRecorder(micStream, { mimeType });
+  mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+  mediaRecorder.onstop = onRecordStop;
+  mediaRecorder.start(100);
+}
+
+function stopRecording() {
+  if (appState !== 'recording') return;
+  clearTimeout(silenceTimer);
+  silenceTimer = null;
+  mediaRecorder.stop();
+}
+
+async function onRecordStop() {
+  setState('thinking');
+  const mimeType = getSupportedMime();
+  const blob = new Blob(audioChunks, { type: mimeType });
+  try {
+    const text = await transcribe(blob, mimeType);
+    if (!text || text.trim() === '') { setState('waiting'); return; }
+    addBubble('user', text);
+    const reply = await chat(text);
+    addBubble('assistant', reply);
+    speak(reply, () => {
+      if (appState !== 'idle') setState('waiting');
+    });
+  } catch (e) {
+    console.error(e);
+    showToast('エラーが発生しました: ' + e.message);
+    setState('waiting');
+  }
+}
+
+function getSupportedMime() {
+  const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
+  return types.find(t => MediaRecorder.isTypeSupported(t)) || 'audio/webm';
+}
+
+// ══════════════════════════════════════════
+//  Whisper API
+// ══════════════════════════════════════════
+async function transcribe(blob, mimeType) {
+  const ext = mimeType.includes('ogg') ? 'ogg' : mimeType.includes('mp4') ? 'mp4' : 'webm';
+  const form = new FormData();
+  form.append('file', blob, `audio.${ext}`);
+  form.append('model', 'whisper-1');
+  form.append('language', 'ja');
+
+  const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: form,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || `Whisper ${res.status}`);
+  }
+  const json = await res.json();
+  return json.text || '';
+}
+
+// ══════════════════════════════════════════
+//  GPT-4o チャット
+// ══════════════════════════════════════════
+const SYSTEM_PROMPT = `あなたは動物園の飼育記録アシスタントです。
+飼育員が話した内容から飼育記録を作成する手伝いをします。
+
+【ルール】
+- 常に簡潔・丁寧な日本語で返答してください（1〜2文以内）
+- 動物種が分かったら、その動物に適した記録項目を決定してください
+- ゾウの場合、個体名の確認を最初に行ってください
+- 不足している情報は1項目ずつ自然な会話で質問してください
+- 記録に必要な最低項目：体調、食事量、排泄、特記事項
+- 全項目が揃ったら必ずJSON形式で以下を返してください（他のテキストは不要）:
+{"status":"complete","record":{"animal_type":"動物種","individual_name":"個体名（不明の場合は空文字）","data":{"体調":"...","食欲":"...","食事量":"...","排泄":"...","行動":"...","特記事項":"..."}}}
+
+【注意】
+- 音声で読み上げるため絵文字は使わないでください
+- completeのJSON以外では絶対にJSONを返さないでください`;
+
+async function chat(userText) {
+  conversation.push({ role: 'user', content: userText });
+
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o',
+      messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...conversation],
+      temperature: 0.4,
+      max_tokens: 300,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || `GPT ${res.status}`);
+  }
+  const json = await res.json();
+  const reply = json.choices[0].message.content.trim();
+  conversation.push({ role: 'assistant', content: reply });
+
+  // 完了JSON検出
+  const match = reply.match(/\{[\s\S]*"status"\s*:\s*"complete"[\s\S]*\}/);
+  if (match) {
+    try {
+      const parsed = JSON.parse(match[0]);
+      if (parsed.status === 'complete' && parsed.record) {
+        saveRecord(parsed.record);
+        return '記録を保存しました。ありがとうございます。';
+      }
+    } catch (_) {}
+  }
+  return reply;
+}
+
+// ══════════════════════════════════════════
+//  Web Speech API 読み上げ
+// ══════════════════════════════════════════
+function speak(text, onEnd) {
+  if (!window.speechSynthesis) { onEnd?.(); return; }
+  speechSynthesis.cancel();
+  isSpeaking = true;
+  const utt = new SpeechSynthesisUtterance(text);
+  utt.lang = 'ja-JP';
+  utt.rate = 1.05;
+  utt.pitch = 1.0;
+  utt.onend = () => { isSpeaking = false; onEnd?.(); };
+  utt.onerror = () => { isSpeaking = false; onEnd?.(); };
+  speechSynthesis.speak(utt);
+}
+
+// ══════════════════════════════════════════
+//  LocalStorage 保存
+// ══════════════════════════════════════════
+function saveRecord(record) {
+  const db = getDB();
+  const id = 'rec_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+  db.records.push({
+    id,
+    timestamp: new Date().toISOString(),
+    animal_type: record.animal_type || '',
+    individual_name: record.individual_name || '',
+    data: record.data || {},
+    raw_conversation: [...conversation],
+  });
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+
+  // 保存後: DB画面へ遷移
+  setTimeout(() => {
+    setState('idle');
+    showDB();
+  }, 1800);
+}
+
+function getDB() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (_) {}
+  return { records: [] };
+}
+
+// ══════════════════════════════════════════
+//  会話リセット
+// ══════════════════════════════════════════
+function resetConversation() {
+  conversation = [];
+  clearChatLog();
+  if (apiKey && appState !== 'waiting') setState('waiting');
+
+  // 最初のAI挨拶
+  setTimeout(() => {
+    const greeting = 'どうぞ、記録を始めてください。';
+    addBubble('assistant', greeting);
+    speak(greeting);
+  }, 300);
+}
+
+// ══════════════════════════════════════════
+//  UI ヘルパー
+// ══════════════════════════════════════════
+function setState(s) {
+  appState = s;
+  const ind = document.getElementById('status-indicator');
+  const txt = document.getElementById('status-text');
+  ind.className = 'waiting';
+  switch (s) {
+    case 'waiting':
+      ind.textContent = '🎤';
+      ind.className = 'waiting';
+      txt.textContent = '待機中 — 話しかけてください';
+      break;
+    case 'recording':
+      ind.textContent = '🔴';
+      ind.className = 'recording';
+      txt.textContent = '録音中...';
+      break;
+    case 'thinking':
+      ind.textContent = '💭';
+      ind.className = 'thinking';
+      txt.textContent = '考え中...';
+      break;
+    case 'idle':
+      ind.textContent = '⏸️';
+      ind.className = '';
+      txt.textContent = '停止中';
+      break;
+  }
+}
+
+function addBubble(role, text) {
+  const log = document.getElementById('chat-log');
+  const empty = document.getElementById('chat-empty');
+  if (empty) empty.remove();
+
+  const isUser = role === 'user';
+  const row = document.createElement('div');
+  row.className = 'bubble-row ' + (isUser ? 'user' : 'assistant');
+
+  const avatar = document.createElement('div');
+  avatar.className = 'avatar ' + (isUser ? 'user-av' : 'ai');
+  avatar.textContent = isUser ? '👤' : '🤖';
+
+  const wrap = document.createElement('div');
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble ' + (isUser ? 'user' : 'ai');
+  bubble.textContent = text;
+
+  const time = document.createElement('div');
+  time.className = 'bubble-time';
+  time.textContent = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+
+  wrap.appendChild(bubble);
+  wrap.appendChild(time);
+  row.appendChild(avatar);
+  row.appendChild(wrap);
+  log.appendChild(row);
+  log.scrollTop = log.scrollHeight;
+}
+
+function clearChatLog() {
+  const log = document.getElementById('chat-log');
+  log.innerHTML = '';
+  const empty = document.createElement('div');
+  empty.id = 'chat-empty';
+  empty.innerHTML = `<div class="hint-icon">🎙️</div><p>マイクに向かって話しかけると<br>記録が始まります</p>`;
+  log.appendChild(empty);
+}
+
+// ══════════════════════════════════════════
+//  DB画面レンダリング
+// ══════════════════════════════════════════
+function renderRecords() {
+  const db = getDB();
+  const list = document.getElementById('records-list');
+  const empty = document.getElementById('db-empty');
+  list.innerHTML = '';
+
+  if (!db.records.length) {
+    empty.style.display = 'flex';
+    empty.style.flexDirection = 'column';
+    return;
+  }
+  empty.style.display = 'none';
+
+  // 新しい順
+  [...db.records].reverse().forEach(rec => {
+    const card = document.createElement('div');
+    card.className = 'record-card';
+
+    const dt = new Date(rec.timestamp);
+    const dateStr = dt.toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' });
+    const timeStr = dt.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+    const icon = getAnimalIcon(rec.animal_type);
+
+    const dataRows = Object.entries(rec.data || {}).map(([k, v]) => {
+      const valStr = typeof v === 'object' ? JSON.stringify(v).replace(/[{}"]/g, '').replace(/:/g, ': ') : String(v);
+      return `<div class="card-row"><span class="card-label">${k}</span><span class="card-value">${valStr}</span></div>`;
+    }).join('');
+
+    card.innerHTML = `
+      <div class="card-header">
+        <div class="card-animal-icon">${icon}</div>
+        <div class="card-title">
+          <h3>${rec.animal_type}${rec.individual_name ? ' / ' + rec.individual_name : ''}</h3>
+          <div class="card-subtitle">${rec.id.slice(-6).toUpperCase()}</div>
+        </div>
+        <div class="card-timestamp">${dateStr}<br>${timeStr}</div>
+      </div>
+      <div class="card-body">${dataRows}</div>
+    `;
+    list.appendChild(card);
+  });
+}
+
+function getAnimalIcon(type) {
+  const map = { 'ゾウ': '🐘', 'ライオン': '🦁', 'キリン': '🦒', 'ペンギン': '🐧',
+    'パンダ': '🐼', 'トラ': '🐯', 'クマ': '🐻', 'サル': '🐒', 'シマウマ': '🦓',
+    'カバ': '🦛', 'サイ': '🦏', 'オカピ': '🦌', 'フラミンゴ': '🦩', 'タコ': '🐙' };
+  return map[type] || '🐾';
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2800);
+}
+</script>
+</body>
+</html>
